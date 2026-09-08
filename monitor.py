@@ -187,6 +187,19 @@ def main():
 
     content = get_page_content()
 
+# Controllo pagina bloccata da Cloudflare
+if (
+    "Sorry, you have been blocked" in content
+    or "You are unable to access netwin.it" in content
+    or "Cloudflare Ray ID" in content
+):
+    print("ACCESSO BLOCCATO DA CLOUDFLARE - Nessuna modifica registrata.")
+    return
+
+current_content = extract_special_bets(content)
+
+previous_content = load_previous_state()
+
     current_content = extract_special_bets(content)
 
     previous_content = load_previous_state()
