@@ -17,19 +17,18 @@ STATE_FILE = "last_state.txt"
 
 
 # ==========================================
-# INVIO MESSAGGI TELEGRAM
+# INVIO MESSAGGIO TELEGRAM
 # ==========================================
 
 def send_telegram(message):
 
     if not BOT_TOKEN or not CHAT_ID:
-        print("Token o Chat ID mancanti")
+        print("Token Telegram o Chat ID mancanti")
         return
 
     telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     try:
-
         response = requests.post(
             telegram_url,
             data={
@@ -42,7 +41,6 @@ def send_telegram(message):
         print(response.text)
 
     except Exception as e:
-
         print(f"Errore Telegram: {e}")
 
 
@@ -51,86 +49,75 @@ def send_telegram(message):
 # ==========================================
 
 def get_page_content():
+
     with sync_playwright() as p:
 
         browser = p.chromium.launch(headless=True)
 
-        page = browser.new_page()
+        try:
 
-        page.goto(
-            URL,
-            wait_until="networkidle",
-            timeout=60000
-        )
+            page = browser.new_page()
 
-        page.wait_for_timeout(5000)
+            page.goto(
+                URL,
+                wait_until="networkidle",
+                timeout=60000
+            )
 
-        content = page.locator("body").inner_text()
+            # Aspetta che la pagina finisca di caricare
+            page.wait_for_timeout(5000)
 
-        # Mantiene solo la parte relativa alle Scommesse Speciali
-        lines = content.splitlines()
+            # Prende tutto il testo visibile della pagina
+            content = page.locator("body").inner_text()
 
-        start = None
+            # ==========================================
+            # ESTRAZIONE SEZIONE SCOMMESSE SPECIALI
+            # ==========================================
 
-        for i, line in enumerate(lines):
-            if "SCOMMESSE SPECIALI" in line.upper():
-                start = i
-                break
+            lines = content.splitlines()
 
-        if start is not None:
-            content = "\n".join(lines[start:start + 80])
+            start = None
 
-        browser.close()
+            for i, line in enumerate(lines):
 
-        return content
+                if "SCOMMESSE SPECIALI" in line.upper():
 
-    # ==========================================
-    # ESTRAE SOLO LA SEZIONE SCOMMESSE SPECIALI
-    # ==========================================
+                    start = i
+                    break
 
-    lines = content.splitlines()
+            # Se trova la sezione, prende le 120 righe successive
+            if start is not None:
 
-    start = None
+                content = "\n".join(
+                    lines[start:start + 120]
+                )
 
-    for i, line in enumerate(lines):
+            else:
 
-        if "SCOMMESSE SPECIALI" in line.upper():
+                print(
+                    "ATTENZIONE: sezione Scommesse Speciali non trovata"
+                )
 
-            start = i
-            break
+            # ==========================================
+            # PULIZIA DEL TESTO
+            # ==========================================
 
+            cleaned_lines = []
 
-    # Se trova la sezione, prende una parte della pagina
-    if start is not None:
+            for line in content.splitlines():
 
-        content = "\n".join(
-            lines[start:start + 120]
-        )
+                line = line.strip()
 
-    else:
+                if line:
+                    cleaned_lines.append(line)
 
-        print("ATTENZIONE: sezione Scommesse Speciali non trovata")
+            content = "\n".join(cleaned_lines)
 
+            return content
 
-    # ==========================================
-    # PULIZIA DEL TESTO
-    # ==========================================
+        finally:
 
-    # Elimina righe vuote
-    cleaned_lines = []
-
-    for line in content.splitlines():
-
-        line = line.strip()
-
-        if line:
-            cleaned_lines.append(line)
-
-
-    content = "\n".join(cleaned_lines)
-
-
-    return content
+            browser.close()
 
 
 # ==========================================
@@ -141,26 +128,7 @@ def main():
 
     print("Controllo della pagina Netwin...")
 
-    try:
-
-        current_content = get_page_content()
-
-    except Exception as e:
-
-        print(f"Errore durante il controllo della pagina: {e}")
-
-        send_telegram(
-            "⚠️ ERRORE MONITOR NETWIN\n\n"
-            f"Il monitor non è riuscito a controllare la pagina.\n\n"
-            f"Errore: {e}"
-        )
-
-        return
-
-
-    # ==========================================
-    # CREA HASH DEL CONTENUTO
-    # ==========================================
+    current_content = get_page_content()
 
     current_hash = hashlib.sha256(
         current_content.encode("utf-8")
@@ -168,7 +136,7 @@ def main():
 
 
     # ==========================================
-    # SE ESISTE UN CONTROLLO PRECEDENTE
+    # SE ESISTE UNO STATO PRECEDENTE
     # ==========================================
 
     if os.path.exists(STATE_FILE):
@@ -183,10 +151,12 @@ def main():
 
 
         # ==========================================
-        # CONFRONTO
+        # MODIFICA RILEVATA
         # ==========================================
 
         if current_hash != previous_hash:
+
+            print("MODIFICA RILEVATA!")
 
             send_telegram(
                 "🚨 MODIFICA RILEVATA SU NETWIN!\n\n"
@@ -194,7 +164,6 @@ def main():
                 f"🔗 {URL}"
             )
 
-            print("MODIFICA RILEVATA!")
 
         else:
 
@@ -207,14 +176,13 @@ def main():
 
     else:
 
+        print("Prima esecuzione.")
+
         send_telegram(
             "✅ MONITOR NETWIN ATTIVO!\n\n"
             "Da questo momento controllerò la pagina "
-            "delle Scommesse Speciali e ti avviserò "
-            "quando rileverò una modifica."
+            "e ti avviserò quando rileverò una modifica."
         )
-
-        print("Prima esecuzione.")
 
 
     # ==========================================
@@ -235,5 +203,4 @@ def main():
 # ==========================================
 
 if __name__ == "__main__":
-
     main()
