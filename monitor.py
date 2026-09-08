@@ -197,16 +197,13 @@ if (
     return
 
 current_content = extract_special_bets(content)
-
 previous_content = load_previous_state()
 
+# ======================================
+# PRIMA ESECUZIONE
+# ======================================
 
-
-    # ======================================
-    # PRIMA ESECUZIONE
-    # ======================================
-
-    if previous_content is None:
+if previous_content is None:
 
         print("Prima esecuzione: salvo lo stato iniziale.")
 
