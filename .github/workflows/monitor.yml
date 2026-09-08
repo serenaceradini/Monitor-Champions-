@@ -45,4 +45,5 @@ jobs:
 
           git diff --cached --quiet || git commit -m "Aggiorna stato monitor"
 
+          git pull --rebase
           git push
