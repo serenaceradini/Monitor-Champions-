@@ -51,34 +51,38 @@ def send_telegram(message):
 # ==========================================
 
 def get_page_content():
-
     with sync_playwright() as p:
 
-        browser = p.chromium.launch(
-            headless=True
-        )
+        browser = p.chromium.launch(headless=True)
 
         page = browser.new_page()
 
-        try:
+        page.goto(
+            URL,
+            wait_until="networkidle",
+            timeout=60000
+        )
 
-            page.goto(
-                URL,
-                wait_until="networkidle",
-                timeout=60000
-            )
+        page.wait_for_timeout(5000)
 
-            # Aspetta qualche secondo per permettere
-            # alla pagina di caricare completamente
-            page.wait_for_timeout(5000)
+        content = page.locator("body").inner_text()
 
-            # Prende tutto il testo visibile
-            content = page.locator("body").inner_text()
+        # Mantiene solo la parte relativa alle Scommesse Speciali
+        lines = content.splitlines()
 
-        finally:
+        start = None
 
-            browser.close()
+        for i, line in enumerate(lines):
+            if "SCOMMESSE SPECIALI" in line.upper():
+                start = i
+                break
 
+        if start is not None:
+            content = "\n".join(lines[start:start + 80])
+
+        browser.close()
+
+        return content
 
     # ==========================================
     # ESTRAE SOLO LA SEZIONE SCOMMESSE SPECIALI
