@@ -1,6 +1,6 @@
 import os
-import re
 import hashlib
+import difflib
 import requests
 from playwright.sync_api import sync_playwright
 
@@ -77,138 +77,104 @@ def get_page_content():
 
 
 # ==========================================
-# ESTRAE SOLO LA PARTE UTILE
+# ESTRAZIONE SEZIONE SCOMMESSE SPECIALI
 # ==========================================
 
 def extract_special_bets(content):
 
-    lines = content.splitlines()
+    lines = []
+
+    for line in content.splitlines():
+
+        line = line.strip()
+
+        if line:
+            lines.append(line)
 
     start = None
 
     for i, line in enumerate(lines):
 
         if "SCOMMESSE SPECIALI" in line.upper():
-
             start = i
             break
 
-
     if start is None:
 
-        print("ATTENZIONE: Scommesse Speciali non trovate")
+        print("ATTENZIONE: sezione Scommesse Speciali non trovata")
 
-        return ""
+        return "\n".join(lines)
 
-
-    # Prendiamo una porzione della pagina dopo il titolo
+    # Prende la sezione successiva al titolo.
+    # Il limite evita di confrontare tutta la pagina.
     section = lines[start:start + 150]
 
-    cleaned_lines = []
-
-    for line in section:
-
-        line = line.strip()
-
-        if line:
-            cleaned_lines.append(line)
-
-
-    return "\n".join(cleaned_lines)
+    return "\n".join(section)
 
 
 # ==========================================
-# PULIZIA DATI DINAMICI
+# CARICAMENTO STATO PRECEDENTE
 # ==========================================
 
-def normalize_content(content):
+def load_previous_state():
 
-    lines = content.splitlines()
+    if not os.path.exists(STATE_FILE):
+        return None
 
-    normalized_lines = []
+    with open(
+        STATE_FILE,
+        "r",
+        encoding="utf-8"
+    ) as file:
 
-    for line in lines:
-
-        line = line.strip()
-
-        if not line:
-            continue
-
-
-        # ------------------------------------------
-        # IGNORA QUOTE
-        # Esempi: 1.80 - 2.05 - 10.50
-        # ------------------------------------------
-
-        if re.fullmatch(r"\d+[.,]\d+", line):
-            continue
+        return file.read()
 
 
-        # ------------------------------------------
-        # IGNORA ORARI
-        # Esempi: 04:30 - 20:45
-        # ------------------------------------------
+# ==========================================
+# SALVATAGGIO STATO
+# ==========================================
 
-        if re.fullmatch(r"\d{1,2}:\d{2}", line):
-            continue
+def save_state(content):
 
+    with open(
+        STATE_FILE,
+        "w",
+        encoding="utf-8"
+    ) as file:
 
-        # ------------------------------------------
-        # IGNORA CODICI SOLO NUMERICI
-        # ------------------------------------------
-
-        if re.fullmatch(r"\d+", line):
-            continue
+        file.write(content)
 
 
-        # ------------------------------------------
-        # IGNORA DATE
-        # ------------------------------------------
+# ==========================================
+# CONFRONTO MODIFICHE
+# ==========================================
 
-        if re.search(
-            r"\b(LUNEDÌ|MARTEDÌ|MERCOLEDÌ|GIOVEDÌ|VENERDÌ|SABATO|DOMENICA)\b",
-            line.upper()
-        ):
-            continue
+def get_changes(old_content, new_content):
 
+    old_lines = old_content.splitlines()
 
-        # ------------------------------------------
-        # IGNORA DATE NUMERICHE
-        # Esempio: 10.09.2026
-        # ------------------------------------------
+    new_lines = new_content.splitlines()
 
-        if re.fullmatch(
-            r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}.*",
-            line
-        ):
-            continue
+    added = []
 
+    removed = []
 
-        # ------------------------------------------
-        # NORMALIZZA SPAZI
-        # ------------------------------------------
+    diff = difflib.ndiff(
+        old_lines,
+        new_lines
+    )
 
-        line = re.sub(
-            r"\s+",
-            " ",
-            line
-        )
+    for line in diff:
 
+        if line.startswith("+ "):
 
-        normalized_lines.append(line.upper())
+            added.append(line[2:])
 
+        elif line.startswith("- "):
 
-    # Elimina eventuali duplicati consecutivi
-    final_lines = []
+            removed.append(line[2:])
 
-    for line in normalized_lines:
-
-        if not final_lines or line != final_lines[-1]:
-
-            final_lines.append(line)
-
-
-    return "\n".join(final_lines)
+    return added, removed
 
 
 # ==========================================
@@ -217,132 +183,105 @@ def normalize_content(content):
 
 def main():
 
-    print("Controllo pagina Netwin...")
+    print("Controllo della pagina Netwin...")
 
-    # Legge la pagina
-    page_content = get_page_content()
+    content = get_page_content()
 
-    # Estrae Scommesse Speciali
-    special_content = extract_special_bets(
-        page_content
-    )
+    current_content = extract_special_bets(content)
 
-    # Pulisce quote e dati dinamici
-    current_content = normalize_content(
-        special_content
-    )
+    previous_content = load_previous_state()
 
 
-    # Controllo di sicurezza
-    if not current_content:
+    # ======================================
+    # PRIMA ESECUZIONE
+    # ======================================
 
-        print(
-            "Nessun contenuto utile trovato. "
-            "Non aggiorno lo stato."
+    if previous_content is None:
+
+        print("Prima esecuzione: salvo lo stato iniziale.")
+
+        save_state(current_content)
+
+        send_telegram(
+            "✅ MONITOR NETWIN ATTIVO!\n\n"
+            "Ho salvato lo stato iniziale delle Scommesse Speciali.\n"
+            "Dalle prossime modifiche ti dirò esattamente cosa cambia."
         )
 
         return
 
 
-    print("\nCONTENUTO MONITORATO:\n")
+    # ======================================
+    # CONTROLLO MODIFICHE
+    # ======================================
 
-    print(current_content)
+    if current_content == previous_content:
 
-    print("\n----------------------------\n")
+        print("Nessuna modifica rilevata.")
 
-
-    # Crea hash del contenuto pulito
-    current_hash = hashlib.sha256(
-        current_content.encode("utf-8")
-    ).hexdigest()
+        return
 
 
-    # ==========================================
-    # STATO PRECEDENTE
-    # ==========================================
-
-    if os.path.exists(STATE_FILE):
-
-        with open(
-            STATE_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            previous_hash = file.read().strip()
+    print("MODIFICA RILEVATA!")
 
 
-        # ------------------------------------------
-        # Il vecchio codice usava un hash diverso.
-        # Se trova un vecchio stato, aggiorna
-        # silenziosamente senza inviare un falso alert.
-        # ------------------------------------------
-
-        if (
-            len(previous_hash) == 64
-            and re.fullmatch(
-                r"[a-fA-F0-9]{64}",
-                previous_hash
-            )
-        ):
-
-            print(
-                "Aggiornamento del vecchio stato "
-                "al nuovo sistema di controllo."
-            )
+    added, removed = get_changes(
+        previous_content,
+        current_content
+    )
 
 
-        # ------------------------------------------
-        # CONFRONTO
-        # ------------------------------------------
-
-        elif current_hash != previous_hash:
-
-            print("MODIFICA IMPORTANTE RILEVATA!")
-
-            send_telegram(
-                "🚨 MODIFICA RILEVATA SU NETWIN!\n\n"
-                "È cambiato il contenuto monitorato "
-                "nelle Scommesse Speciali.\n\n"
-                f"🔗 {URL}"
-            )
+    message = (
+        "🚨 MODIFICA RILEVATA SU NETWIN\n\n"
+        "📍 Sezione: Scommesse Speciali\n\n"
+    )
 
 
-        else:
+    if added:
 
-            print(
-                "Nessuna modifica importante rilevata."
-            )
+        message += "➕ AGGIUNTO:\n"
+
+        for item in added[:20]:
+
+            message += f"• {item}\n"
+
+        message += "\n"
 
 
-    # ==========================================
-    # PRIMA ESECUZIONE
-    # ==========================================
+    if removed:
 
-    else:
+        message += "➖ RIMOSSO:\n"
 
-        print("Prima esecuzione del nuovo monitor.")
+        for item in removed[:20]:
 
-        send_telegram(
-            "✅ MONITOR NETWIN ATTIVO!\n\n"
-            "Ora controllerò principalmente le modifiche "
-            "alle scommesse, ignorando quote e altri "
-            "dati dinamici."
+            message += f"• {item}\n"
+
+        message += "\n"
+
+
+    if not added and not removed:
+
+        message += (
+            "⚠️ È stata rilevata una modifica, "
+            "ma non è stato possibile identificarne il dettaglio.\n\n"
         )
 
 
-    # ==========================================
-    # SALVA NUOVO STATO
-    # ==========================================
+    message += f"🔗 {URL}"
 
-    with open(
-        STATE_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
 
-        file.write(current_hash)
+    # ======================================
+    # INVIA NOTIFICA
+    # ======================================
 
+    send_telegram(message)
+
+
+    # ======================================
+    # AGGIORNA STATO
+    # ======================================
+
+    save_state(current_content)
 
     print("Stato aggiornato correttamente.")
 
