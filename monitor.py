@@ -3,7 +3,7 @@ import hashlib
 import requests
 from playwright.sync_api import sync_playwright
 
-URL = "https://prenotatore.betaland.it/sport/calcio/u/o-giornata_1_-2_-8261"
+URL = "https://www.netwin.it/scommesse/calcio/scommesse-speciali/u-o-giornata"
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -45,7 +45,22 @@ def get_page_content():
 
         page.wait_for_timeout(5000)
 
-        content = page.locator("body").inner_text()
+content = page.locator("body").inner_text()
+
+# Mantiene solo la parte relativa alle Scommesse Speciali
+lines = content.splitlines()
+
+start = None
+
+for i, line in enumerate(lines):
+    if "SCOMMESSE SPECIALI" in line.upper():
+        start = i
+        break
+
+if start is not None:
+    content = "\n".join(lines[start:start + 80])
+
+return content
 
         browser.close()
 
