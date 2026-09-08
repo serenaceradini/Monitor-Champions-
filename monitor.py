@@ -200,9 +200,6 @@ current_content = extract_special_bets(content)
 
 previous_content = load_previous_state()
 
-    current_content = extract_special_bets(content)
-
-    previous_content = load_previous_state()
 
 
     # ======================================
