@@ -218,79 +218,63 @@ if previous_content is None:
         return
 
 
-    # ======================================
-    # CONTROLLO MODIFICHE
-    # ======================================
+    # ==========================================
+# CONTROLLO MODIFICHE
+# ==========================================
 
-    if current_content == previous_content:
+if current_content == previous_content:
+    print("Nessuna modifica rilevata.")
+    return
 
-        print("Nessuna modifica rilevata.")
+print("MODIFICA RILEVATA!")
 
-        return
+added, removed = get_changes(
+    previous_content,
+    current_content
+)
 
+message = (
+    "🚨 MODIFICA RILEVATA SU NETWIN!\n\n"
+    "📍 Sezione: Scommesse Speciali\n\n"
+)
 
-    print("MODIFICA RILEVATA!")
+if added:
+    message += "➕ AGGIUNTO:\n"
 
+    for item in added[:20]:
+        message += f"• {item}\n"
 
-    added, removed = get_changes(
-        previous_content,
-        current_content
+    message += "\n"
+
+if removed:
+    message += "➖ RIMOSSO:\n"
+
+    for item in removed[:20]:
+        message += f"• {item}\n"
+
+    message += "\n"
+
+if not added and not removed:
+    message += (
+        "⚠️ È stata rilevata una modifica, "
+        "ma non è stato possibile identificarne il dettaglio.\n\n"
     )
 
+message += f"🔗 {URL}"
 
-    message = (
-        "🚨 MODIFICA RILEVATA SU NETWIN\n\n"
-        "📍 Sezione: Scommesse Speciali\n\n"
-    )
+# ==========================================
+# INVIA NOTIFICA
+# ==========================================
 
+send_telegram(message)
 
-    if added:
+# ==========================================
+# AGGIORNA STATO
+# ==========================================
 
-        message += "➕ AGGIUNTO:\n"
+save_state(current_content)
 
-        for item in added[:20]:
-
-            message += f"• {item}\n"
-
-        message += "\n"
-
-
-    if removed:
-
-        message += "➖ RIMOSSO:\n"
-
-        for item in removed[:20]:
-
-            message += f"• {item}\n"
-
-        message += "\n"
-
-
-    if not added and not removed:
-
-        message += (
-            "⚠️ È stata rilevata una modifica, "
-            "ma non è stato possibile identificarne il dettaglio.\n\n"
-        )
-
-
-    message += f"🔗 {URL}"
-
-
-    # ======================================
-    # INVIA NOTIFICA
-    # ======================================
-
-    send_telegram(message)
-
-
-    # ======================================
-    # AGGIORNA STATO
-    # ======================================
-
-    save_state(current_content)
-
-    print("Stato aggiornato correttamente.")
+print("Stato aggiornato correttamente.")
 
 
 # ==========================================
@@ -298,5 +282,4 @@ if previous_content is None:
 # ==========================================
 
 if __name__ == "__main__":
-
     main()
