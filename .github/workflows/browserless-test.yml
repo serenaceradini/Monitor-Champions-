@@ -1,0 +1,28 @@
+name: Test Browserless
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-browserless:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Installa Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: |
+          pip install playwright
+          playwright install chromium
+
+      - name: Test Browserless
+        env:
+          BROWSERLESS_TOKEN: ${{ secrets.BROWSERLESS_TOKEN }}
+        run: |
+          python browserless_test.py
