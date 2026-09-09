@@ -1,5 +1,4 @@
 import os
-import hashlib
 import difflib
 import requests
 from playwright.sync_api import sync_playwright
@@ -22,12 +21,13 @@ STATE_FILE = "last_state.txt"
 # ==========================================
 
 def send_telegram(message):
-
     if not BOT_TOKEN or not CHAT_ID:
-        print("Token Telegram o Chat ID mancanti")
+        print("Token Telegram o Chat ID mancanti.")
         return
 
-    telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    telegram_url = (
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    )
 
     try:
         response = requests.post(
@@ -56,7 +56,6 @@ def get_page_content():
         browser = p.chromium.launch(headless=True)
 
         try:
-
             page = browser.new_page()
 
             page.goto(
@@ -69,51 +68,104 @@ def get_page_content():
 
             content = page.locator("body").inner_text()
 
-            return content
-
         finally:
-
             browser.close()
 
 
-# ==========================================
-# ESTRAZIONE SEZIONE SCOMMESSE SPECIALI
-# ==========================================
+    # ======================================
+    # CONTROLLO CLOUDFLARE
+    # ======================================
 
-def extract_special_bets(content):
+    cloudflare_messages = [
+        "Sorry, you have been blocked",
+        "You are unable to access netwin.it",
+        "Why have I been blocked?",
+        "This website is using a security service",
+        "Cloudflare Ray ID"
+    ]
 
-    lines = []
+    for message in cloudflare_messages:
 
-    for line in content.splitlines():
+        if message in content:
 
-        line = line.strip()
+            print(
+                "ACCESSO BLOCCATO DA CLOUDFLARE - "
+                "Nessuna modifica registrata."
+            )
 
-        if line:
-            lines.append(line)
+            return None
+
+
+    # ======================================
+    # ESTRAZIONE SOLO "SCOMMESSE SPECIALI"
+    # ======================================
+
+    lines = content.splitlines()
 
     start = None
 
     for i, line in enumerate(lines):
 
         if "SCOMMESSE SPECIALI" in line.upper():
+
             start = i
+
             break
+
 
     if start is None:
 
-        print("ATTENZIONE: sezione Scommesse Speciali non trovata")
+        print(
+            "ATTENZIONE: sezione Scommesse Speciali "
+            "non trovata."
+        )
 
-        return "\n".join(lines)
+        return None
 
-    # Prende la sezione successiva al titolo.
-    # Il limite evita di confrontare tutta la pagina.
-    section = lines[start:start + 150]
 
-    return "\n".join(section)
+    # Prendiamo una porzione della pagina
+    # successiva alla sezione Scommesse Speciali
+
+    section_lines = lines[start:start + 150]
+
+
+    # ======================================
+    # PULIZIA TESTO
+    # ======================================
+
+    cleaned_lines = []
+
+    for line in section_lines:
+
+        line = line.strip()
+
+        if not line:
+            continue
+
+        # Eliminiamo elementi tecnici/volatili
+        # che possono cambiare senza modificare
+        # realmente le scommesse.
+
+        if "Cloudflare Ray ID" in line:
+            continue
+
+        if "Your IP:" in line:
+            continue
+
+        cleaned_lines.append(line)
+
+
+    # ======================================
+    # NORMALIZZAZIONE
+    # ======================================
+
+    result = "\n".join(cleaned_lines)
+
+    return result.strip()
 
 
 # ==========================================
-# CARICAMENTO STATO PRECEDENTE
+# LETTURA STATO PRECEDENTE
 # ==========================================
 
 def load_previous_state():
@@ -121,13 +173,21 @@ def load_previous_state():
     if not os.path.exists(STATE_FILE):
         return None
 
-    with open(
-        STATE_FILE,
-        "r",
-        encoding="utf-8"
-    ) as file:
+    try:
 
-        return file.read()
+        with open(
+            STATE_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            return file.read().strip()
+
+    except Exception as e:
+
+        print(f"Errore lettura stato: {e}")
+
+        return None
 
 
 # ==========================================
@@ -136,33 +196,37 @@ def load_previous_state():
 
 def save_state(content):
 
-    with open(
-        STATE_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
+    try:
 
-        file.write(content)
+        with open(
+            STATE_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            file.write(content)
+
+    except Exception as e:
+
+        print(f"Errore salvataggio stato: {e}")
 
 
 # ==========================================
-# CONFRONTO MODIFICHE
+# CONFRONTO DELLE MODIFICHE
 # ==========================================
 
 def get_changes(old_content, new_content):
 
     old_lines = old_content.splitlines()
-
     new_lines = new_content.splitlines()
-
-    added = []
-
-    removed = []
 
     diff = difflib.ndiff(
         old_lines,
         new_lines
     )
+
+    added = []
+    removed = []
 
     for line in diff:
 
@@ -174,6 +238,7 @@ def get_changes(old_content, new_content):
 
             removed.append(line[2:])
 
+
     return added, removed
 
 
@@ -183,98 +248,137 @@ def get_changes(old_content, new_content):
 
 def main():
 
-    print("Controllo della pagina Netwin...")
+    print("Controllo pagina Netwin...")
 
-    content = get_page_content()
+    current_content = get_page_content()
 
-# Controllo pagina bloccata da Cloudflare
-if (
-    "Sorry, you have been blocked" in content
-    or "You are unable to access netwin.it" in content
-    or "Cloudflare Ray ID" in content
-):
-    print("ACCESSO BLOCCATO DA CLOUDFLARE - Nessuna modifica registrata.")
-    return
 
-current_content = extract_special_bets(content)
-previous_content = load_previous_state()
+    # ======================================
+    # PAGINA NON DISPONIBILE / CLOUDFLARE
+    # ======================================
 
-# ======================================
-# PRIMA ESECUZIONE
-# ======================================
+    if current_content is None:
 
-if previous_content is None:
-
-        print("Prima esecuzione: salvo lo stato iniziale.")
-
-        save_state(current_content)
-
-        send_telegram(
-            "✅ MONITOR NETWIN ATTIVO!\n\n"
-            "Ho salvato lo stato iniziale delle Scommesse Speciali.\n"
-            "Dalle prossime modifiche ti dirò esattamente cosa cambia."
+        print(
+            "Pagina non disponibile o bloccata. "
+            "Stato precedente mantenuto."
         )
 
         return
 
 
-    # ==========================================
-# CONTROLLO MODIFICHE
-# ==========================================
+    # ======================================
+    # STATO PRECEDENTE
+    # ======================================
 
-if current_content == previous_content:
-    print("Nessuna modifica rilevata.")
-    return
+    previous_content = load_previous_state()
 
-print("MODIFICA RILEVATA!")
 
-added, removed = get_changes(
-    previous_content,
-    current_content
-)
+    # ======================================
+    # PRIMA ESECUZIONE
+    # ======================================
 
-message = (
-    "🚨 MODIFICA RILEVATA SU NETWIN!\n\n"
-    "📍 Sezione: Scommesse Speciali\n\n"
-)
+    if previous_content is None:
 
-if added:
-    message += "➕ AGGIUNTO:\n"
+        print(
+            "Prima esecuzione: salvo lo stato iniziale."
+        )
 
-    for item in added[:20]:
-        message += f"• {item}\n"
+        save_state(current_content)
 
-    message += "\n"
+        send_telegram(
+            "✅ MONITOR NETWIN ATTIVO!\n\n"
+            "Ho salvato lo stato iniziale delle "
+            "Scommesse Speciali.\n\n"
+            "Dalle prossime esecuzioni ti dirò "
+            "esattamente cosa è cambiato."
+        )
 
-if removed:
-    message += "➖ RIMOSSO:\n"
+        return
 
-    for item in removed[:20]:
-        message += f"• {item}\n"
 
-    message += "\n"
+    # ======================================
+    # CONFRONTO
+    # ======================================
 
-if not added and not removed:
-    message += (
-        "⚠️ È stata rilevata una modifica, "
-        "ma non è stato possibile identificarne il dettaglio.\n\n"
+    if current_content == previous_content:
+
+        print("Nessuna modifica rilevata.")
+
+        return
+
+
+    print("MODIFICA RILEVATA!")
+
+
+    # ======================================
+    # CALCOLO MODIFICHE
+    # ======================================
+
+    added, removed = get_changes(
+        previous_content,
+        current_content
     )
 
-message += f"🔗 {URL}"
 
-# ==========================================
-# INVIA NOTIFICA
-# ==========================================
+    # ======================================
+    # CREAZIONE MESSAGGIO
+    # ======================================
 
-send_telegram(message)
+    message = (
+        "🚨 MODIFICA RILEVATA SU NETWIN!\n\n"
+        "📍 Sezione: Scommesse Speciali\n\n"
+    )
 
-# ==========================================
-# AGGIORNA STATO
-# ==========================================
 
-save_state(current_content)
+    if added:
 
-print("Stato aggiornato correttamente.")
+        message += "➕ AGGIUNTO:\n"
+
+        for item in added[:20]:
+
+            message += f"• {item}\n"
+
+        message += "\n"
+
+
+    if removed:
+
+        message += "➖ RIMOSSO:\n"
+
+        for item in removed[:20]:
+
+            message += f"• {item}\n"
+
+        message += "\n"
+
+
+    if not added and not removed:
+
+        message += (
+            "⚠️ È stata rilevata una modifica, "
+            "ma non è stato possibile identificarne "
+            "il dettaglio.\n\n"
+        )
+
+
+    message += f"🔗 {URL}"
+
+
+    # ======================================
+    # INVIO TELEGRAM
+    # ======================================
+
+    send_telegram(message)
+
+
+    # ======================================
+    # AGGIORNA STATO
+    # ======================================
+
+    save_state(current_content)
+
+    print("Stato aggiornato correttamente.")
 
 
 # ==========================================
@@ -282,4 +386,5 @@ print("Stato aggiornato correttamente.")
 # ==========================================
 
 if __name__ == "__main__":
+
     main()
