@@ -1,0 +1,23 @@
+name: Test Betaland
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-betaland:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Installa Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa requests
+        run: pip install requests
+
+      - name: Test Betaland
+        run: python betaland_test.py
